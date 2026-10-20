@@ -27,6 +27,11 @@ Edit/android-build/
 # Generated at build time from Forth/Resources
 Edit/android/assets/
 
+# Release binaries (upload via GitHub Releases; keep scripts/notes in git)
+releases/*.apk
+releases/*.zip
+releases/*.aab
+
 # Qt Creator / CMake
 CMakeLists.txt.user*
 Edit/.qtcreator/

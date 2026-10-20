@@ -110,10 +110,14 @@ the editor opens the file.
 ## Verify quickly
 
 Marketing version **0.2.0** (`AndroidManifest` `versionName`, kernel
-`identity.S`, ship marker `0.2.0-resources`). After install and launch, the
-console should show sign-on first, then module Loading lines and
-`HYPER: Config/HYPER.NDX … bytes`. Open a known word with VIEW / Hyper to
-confirm the index is live.
+`identity.S`, ship marker `0.2.0-resources`). Sideload kits ship on
+[GitHub Releases](https://github.com/Win32Forth/EditForthAnd/releases)
+(`EditForthAnd-*-arm64.zip`); pack/publish with
+`scripts/package-github-release.command [--publish]`.
+
+After install and launch, the console should show sign-on first, then module
+Loading lines and `HYPER: Config/HYPER.NDX … bytes`. Open a known word with
+VIEW / Hyper to confirm the index is live.
 
 Debugger smoke: put `: DBG-SMOKE 7 . CR ; DEBUG DBG-SMOKE` in a `.fth` under
 the app root, `INCLUDE` it, confirm Step controls appear, step or Continue

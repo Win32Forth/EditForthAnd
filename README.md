@@ -63,6 +63,19 @@ project is gone). Studio can still provide the SDK/emulator only.
 
 Package id: `org.win32forth.editforthand`.
 
+## Download / install (APK)
+
+GitHub Releases ship a sideload kit (no Qt Creator required):
+
+https://github.com/Win32Forth/EditForthAnd/releases
+
+1. Download **EditForthAnd-*-arm64.zip** (APK + `install-on-device.command` + `INSTALL.txt`).
+2. Start a tablet AVD or connect a device with USB debugging.
+3. Double-click `install-on-device.command` (macOS), or `adb install -r` the APK.
+
+From a local build tree you can also use `scripts/run-on-emulator.command`, or
+re-pack and publish with `scripts/package-github-release.command [--publish]`.
+
 ## Console boot (expected)
 
 ```

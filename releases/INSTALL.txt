@@ -1,0 +1,32 @@
+EditForthAnd — Android install
+==============================
+
+Package: org.win32forth.editforthand
+APK:     EditForthAnd-<version>-arm64.apk  (arm64-v8a; API 26+)
+
+Requirements
+------------
+- Android device or emulator with USB debugging (or an AVD already running)
+- adb from the Android SDK platform-tools on your PATH, or at:
+    ~/Library/Android/sdk/platform-tools/adb   (macOS default)
+
+Quick install (macOS)
+---------------------
+1. Start your tablet/phone AVD, or plug in a device with USB debugging on.
+2. Double-click  install-on-device.command
+   (or run it from Terminal in this folder)
+
+Command line
+------------
+  adb install -r EditForthAnd-*-arm64.apk
+  adb shell am start -n org.win32forth.editforthand/org.qtproject.qt.android.bindings.QtActivity
+
+Stop a stuck session
+--------------------
+  adb shell am force-stop org.win32forth.editforthand
+
+Notes
+-----
+- This is a debug-signed APK for sideload / emulator use (not Play Store).
+- First launch copies Forth Library / AutoLoad into app-private storage.
+- Prefer a tablet-sized AVD for console work.
