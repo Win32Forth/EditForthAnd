@@ -27,9 +27,7 @@ Edit/android-build/
 # Generated at build time from Forth/Resources
 Edit/android/assets/
 
-# Release binaries (upload via GitHub Releases; keep scripts/notes in git)
-releases/*.apk
-releases/*.zip
+# Keep versioned sideload kits in releases/ (APK + zip). Ignore stray AABs only.
 releases/*.aab
 
 # Qt Creator / CMake
