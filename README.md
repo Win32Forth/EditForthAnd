@@ -3,7 +3,7 @@
 Android sibling of [EditForthWin](https://github.com/Win32Forth/EditForthWin).  
 Public domain (same spirit as the other EditForth trees).
 
-**Version:** 0.2.0 (`versionCode` 2)
+**Version:** 0.2.1 (`versionCode` 3)
 
 **Status:** Qt for Android runs the shared `Edit/` editor + Forth console on
 arm64-v8a. The kernel is generated from Windows `Forth/kernel/arm64` via
@@ -14,6 +14,14 @@ Hyper + `HYPER-REINDEX`). The host resolves `Library/` / `AutoLoad` /
 `Config` under the app data root, case-folds under that tree, and serves
 virtual `Config/HYPER.SPECS` from `HYPER.CFG`. File → Open / FLOAD use an
 in-app picker on Android so the session is not trapped in the system dialog.
+
+### 0.2.1 highlights
+
+- Fix `TIME&DATE` / `host_time_date` ABI (was crashing ANS / Facility)
+- Live Forth emit → logcat (and batched UI flush) so long FLOAD suites are
+  capturable
+- Hayes validation **PASS** (`ALL COUNTS ZERO`); ANS-VALIDATE documented as
+  incomplete on `/tmp` File-Access / Block paths (see `docs/android-host.md`)
 
 ### 0.2.0 highlights
 
@@ -79,8 +87,8 @@ re-pack and publish with `scripts/package-github-release.command [--publish]`.
 ## Console boot (expected)
 
 ```
-=== EditForthAnd arm64 0.2.0 === Oct 20, 2026 4:31 PM ===
-version=0.2.0  built=Oct 20, 2026 4:31 PM  console=EditForthAnd arm64
+=== EditForthAnd arm64 0.2.1 === Oct 20, 2026 5:20 PM ===
+version=0.2.1  built=Oct 20, 2026 5:20 PM  console=EditForthAnd arm64
 kernel_init => 0
 DEBUGGER_MODULE :Loading module
 EMITTER_MODULE :Loading module

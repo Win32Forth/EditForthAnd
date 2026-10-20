@@ -13,7 +13,7 @@ namespace {
 const char kAssetRoot[] = "assets:/EditForthAnd";
 const char kMarkerName[] = ".shipped-apk-version";
 // Bump when the set of shipped files changes and must be recopied.
-const char kShipVersion[] = "0.2.0-resources";
+const char kShipVersion[] = "0.2.1-resources";
 
 bool writeFile(const QString &destPath, const QByteArray &bytes) {
     QDir().mkpath(QFileInfo(destPath).absolutePath());

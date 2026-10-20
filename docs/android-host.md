@@ -109,8 +109,8 @@ the editor opens the file.
 
 ## Verify quickly
 
-Marketing version **0.2.0** (`AndroidManifest` `versionName`, kernel
-`identity.S`, ship marker `0.2.0-resources`). Sideload kits ship on
+Marketing version **0.2.1** (`AndroidManifest` `versionName`, kernel
+`identity.S`, ship marker `0.2.1-resources`). Sideload kits ship on
 [GitHub Releases](https://github.com/Win32Forth/EditForthAnd/releases)
 (`EditForthAnd-*-arm64.zip`); pack/publish with
 `scripts/package-github-release.command [--publish]`.
@@ -125,3 +125,39 @@ until `DEBUG done`.
 
 GRAPHICS: `ALSO GRAPHICS GRAPHICS-SMOKE`, or load `Sample/BRESENHAM.fth` /
 `Sample/GCLOCK.FTH` as above.
+
+## Validation (ANS / Hayes)
+
+Run these **separately**, with an EditForthAnd force-stop / cold start between
+them (shared dictionary / block-file state from one suite can disturb the other):
+
+```text
+FROMLIB FLOAD Testing/ANSValidate/ANS-VALIDATE.fth
+FROMLIB FLOAD Testing/HayesTest/HayesTest.fth
+```
+
+**0.2.1 Android arm64 results (2026-10-20):** same as the 0.2.0 validation run
+below (Hayes PASS; ANS incomplete on `/tmp` File/Block). Host fixes in 0.2.1:
+`host_time_date` ABI and emit→logcat for suite capture.
+
+**0.2.0 / 0.2.1 Android arm64 suite notes (2026-10-20):**
+
+| Suite | Result |
+| --- | --- |
+| Hayes | **PASS** — `*** HAYES: ALL COUNTS ZERO — PASS ***` / `=== 64Forth Hayes subset complete ===` (transcript under `build-android/hayes-results.txt`) |
+| ANS-VALIDATE | **Incomplete** — Core through Programming-Tools OK; **File-Access** and **Block** fail; suite aborts with `BL-T ?` / `throw -13` before XChar / Float / Host / driver summary (`build-android/ans-validate-results.txt`) |
+
+### Block / File-Access gap
+
+The Forth Block words (`OPEN-BLOCK-FILE`, `CREATE-BLOCK-FILE`, `BLOCK`, `LOAD`,
+…) are present (cold `kernel2.fth`). ANS Block is not a missing vocabulary; it
+depends on File-Access creating a volume at **`/tmp/64forth-ansval.blk`**, and
+ANS File-Access uses the same `/tmp` style paths. On Android those creates fail
+(`FAIL: CREATE-FILE`, then `FAIL: CREATE-BLOCK-FILE`). After a failed block
+`LOAD`, `BL-T` is undefined and the driver throws **-13**, so later ANS modules
+do not run.
+
+Hayes Block passed because `prepare-blocks.fth` created **`hayes-blocks.blk`**
+under the writable app Forth tree (not `/tmp`). Treat ANS File-Access + Block
+(via `/tmp`) as **not yet validated** on Android until the host maps those
+paths or the tests use an app-private directory.

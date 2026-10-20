@@ -32,18 +32,30 @@ void host_sleep(long long ms)
         usleep((useconds_t)(ms * 1000));
 }
 
-void host_time_date(long long *y, long long *mo, long long *d, long long *h,
-                    long long *mi, long long *s)
+/* Kernel passes one pointer to int64 out[6]: sec, min, hour, day, month, year. */
+void host_time_date(long long *out)
 {
-    time_t now = time(NULL);
+    time_t now;
     struct tm tm;
-    localtime_r(&now, &tm);
-    if (y) *y = tm.tm_year + 1900;
-    if (mo) *mo = tm.tm_mon + 1;
-    if (d) *d = tm.tm_mday;
-    if (h) *h = tm.tm_hour;
-    if (mi) *mi = tm.tm_min;
-    if (s) *s = tm.tm_sec;
+
+    if (out == NULL)
+        return;
+    now = time(NULL);
+    if (localtime_r(&now, &tm) == NULL) {
+        out[0] = 0;
+        out[1] = 0;
+        out[2] = 0;
+        out[3] = 1;
+        out[4] = 1;
+        out[5] = 1970;
+        return;
+    }
+    out[0] = tm.tm_sec;
+    out[1] = tm.tm_min;
+    out[2] = tm.tm_hour;
+    out[3] = tm.tm_mday;
+    out[4] = tm.tm_mon + 1;
+    out[5] = tm.tm_year + 1900;
 }
 
 /* ---- memory ---- */

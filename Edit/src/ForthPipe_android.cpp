@@ -75,6 +75,7 @@ void ForthPipe::start()
     m_stop.store(false);
     g_pipe = this;
     kernel_set_emit(android_emit_char);
+    emit_buf_set_flush(android_flush_emit_to_ui);
     kernel_set_key(android_debug_key);
     android_debug_set_hooks(android_flush_emit_to_ui, android_paint_to_ui);
     android_debug_clear_key();
