@@ -1,0 +1,33 @@
+# Android / Gradle
+Android/.gradle/
+Android/build/
+Android/app/build/
+Android/local.properties
+Android/.cxx/
+Android/captures/
+Android/*.iml
+Android/.idea/
+*.iml
+
+# Native / local
+.DS_Store
+*.o
+*.obj
+*.so
+*.a
+local.properties
+
+# Editor
+.vscode/
+*.swp
+*~
+
+build-android/
+Edit/android-build/
+# Generated at build time from Forth/Resources
+Edit/android/assets/
+
+# Qt Creator / CMake
+CMakeLists.txt.user*
+Edit/.qtcreator/
+*.user
