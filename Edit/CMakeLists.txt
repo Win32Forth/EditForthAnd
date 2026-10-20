@@ -24,7 +24,12 @@ set(EDIT_SOURCES
 
 if(ANDROID)
     # Header listed so AUTOMOC sees Q_OBJECT (cpp name is ForthPipe_android.cpp).
-    list(APPEND EDIT_SOURCES src/ForthPipe.h src/ForthPipe_android.cpp)
+    list(APPEND EDIT_SOURCES
+        src/ForthPipe.h
+        src/ForthPipe_android.cpp
+        src/GraphicsBridge.cpp
+        src/GraphicsWindow.cpp
+    )
 else()
     list(APPEND EDIT_SOURCES src/ForthPipe.cpp)
 endif()
@@ -81,8 +86,10 @@ if(ANDROID)
     add_library(forthnative SHARED
         ${HOST_ANDROID}/emit_buf.c
         ${HOST_ANDROID}/host_android.c
+        ${HOST_ANDROID}/host_debug_android.c
         ${HOST_ANDROID}/host_file_android.c
         ${HOST_ANDROID}/host_float.c
+        ${HOST_ANDROID}/host_gfx_android.c
         ${HOST_ANDROID}/host_view.c
         ${KERNEL_ASM}
     )

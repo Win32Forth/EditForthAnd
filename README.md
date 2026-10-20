@@ -3,6 +3,8 @@
 Android sibling of [EditForthWin](https://github.com/Win32Forth/EditForthWin).  
 Public domain (same spirit as the other EditForth trees).
 
+**Version:** 0.2.0 (`versionCode` 2)
+
 **Status:** Qt for Android runs the shared `Edit/` editor + Forth console on
 arm64-v8a. The kernel is generated from Windows `Forth/kernel/arm64` via
 `GrokTools/arm64_to_android_gas.py` and linked into `libforthnative.so`.
@@ -10,8 +12,19 @@ arm64-v8a. The kernel is generated from Windows `Forth/kernel/arm64` via
 Boot matches Windows: product sign-on first, then Autoload (Debugger, Emitter,
 Hyper + `HYPER-REINDEX`). The host resolves `Library/` / `AutoLoad` /
 `Config` under the app data root, case-folds under that tree, and serves
-virtual `Config/HYPER.SPECS` from `HYPER.CFG`. File → Open / FLOAD use a
-non-native Qt dialog so the session is not trapped in the system picker.
+virtual `Config/HYPER.SPECS` from `HYPER.CFG`. File → Open / FLOAD use an
+in-app picker on Android so the session is not trapped in the system dialog.
+
+### 0.2.0 highlights
+
+- **Debugger** — arm / step / continue / Stop via `host_debug_android` and a
+  worker-thread `eval` (DebugBar strip when armed)
+- **VIEW** — strip View mode (and Alt+click when delivered) opens stamped source;
+  `VIEW <word>` at the console
+- **GRAPHICS** — in-activity overlay with char cells plus COLOR8 / TRUECOLOR
+  pixel blit (`PREFRESH` / `host_app_cblit`); verified `GRAPHICS-SMOKE`,
+  `RUN-LINES` (Bresenham), and `GCLOCK`
+- Creator-free install helper: `scripts/run-on-emulator.command`
 
 ## Layout
 
@@ -53,8 +66,8 @@ Package id: `org.win32forth.editforthand`.
 ## Console boot (expected)
 
 ```
-=== EditForthAnd arm64 0.1.0 === Android scaffold ===
-version=0.1.0  built=Android scaffold  console=EditForthAnd arm64
+=== EditForthAnd arm64 0.2.0 === Oct 20, 2026 4:31 PM ===
+version=0.2.0  built=Oct 20, 2026 4:31 PM  console=EditForthAnd arm64
 kernel_init => 0
 DEBUGGER_MODULE :Loading module
 EMITTER_MODULE :Loading module

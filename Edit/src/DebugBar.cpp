@@ -83,6 +83,11 @@ DebugBar::DebugBar(QWidget *parent) : QWidget(parent) {
     m_pan->setToolTip(QStringLiteral(
         "When on, left-drag pans the editor/console. Use this on the emulator "
         "(USB wheel does not reach the app). Turn off to select text."));
+    m_view = new QPushButton(QStringLiteral("View"), this);
+    m_view->setCheckable(true);
+    m_view->setToolTip(QStringLiteral(
+        "When on, left-click a Forth word to open its stamped source (VIEW). "
+        "Alt+click also works when the host delivers Alt. Turn off to type/select."));
     connect(m_include, &QPushButton::clicked, this, &DebugBar::includeRequested);
     connect(m_run, &QPushButton::clicked, this, &DebugBar::runRequested);
     connect(m_pause, &QPushButton::clicked, this, &DebugBar::pauseRequested);
@@ -90,25 +95,30 @@ DebugBar::DebugBar(QWidget *parent) : QWidget(parent) {
     connect(m_dock, &QPushButton::clicked, this, &DebugBar::dockToggleRequested);
     connect(m_quit, &QPushButton::clicked, this, &DebugBar::quitRequested);
     connect(m_pan, &QPushButton::toggled, this, &DebugBar::panToggled);
+    connect(m_view, &QPushButton::toggled, this, &DebugBar::viewToggled);
     // File→Exit covers quit on every platform.
     m_quit->hide();
 #ifdef Q_OS_ANDROID
     // Floating Undock covers the whole activity on Android; keep the console docked.
     m_dock->hide();
     // Color only when checked — keep default padding so height matches INCLUDE/RUN.
-    m_pan->setStyleSheet(
-        QStringLiteral("QPushButton:checked { background: #1565c0; color: white; font-weight: 700; }"));
+    const QString checkedStyle = QStringLiteral(
+        "QPushButton:checked { background: #1565c0; color: white; font-weight: 700; }");
+    m_pan->setStyleSheet(checkedStyle);
+    m_view->setStyleSheet(checkedStyle);
 #else
-    m_pan->hide(); // Desktop uses the mouse wheel.
+    m_pan->hide();  // Desktop uses the mouse wheel.
+    m_view->hide(); // Desktop uses Ctrl/Command-click.
 #endif
 
     auto *strip = new QHBoxLayout;
     strip->setContentsMargins(8, 4, 8, 2);
     strip->addWidget(m_pan);
+    strip->addWidget(m_view);
     strip->addSpacing(12);
     strip->addWidget(m_engine);
     // Same vertical metrics as the other strip buttons.
-    for (QPushButton *btn : {m_pan, m_include, m_run, m_pause, breaks, m_dock}) {
+    for (QPushButton *btn : {m_pan, m_view, m_include, m_run, m_pause, breaks, m_dock}) {
         if (btn == nullptr)
             continue;
         btn->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
@@ -213,6 +223,13 @@ void DebugBar::setPanChecked(bool on) {
         return;
     const QSignalBlocker block(m_pan);
     m_pan->setChecked(on);
+}
+
+void DebugBar::setViewChecked(bool on) {
+    if (m_view == nullptr)
+        return;
+    const QSignalBlocker block(m_view);
+    m_view->setChecked(on);
 }
 
 void DebugBar::setBreaks(const QString &text) {

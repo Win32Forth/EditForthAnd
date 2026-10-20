@@ -1,5 +1,6 @@
 #include "CodeEdit.h"
 
+#include "ViewClick.h"
 #include "WheelScroll.h"
 
 #include <QColor>
@@ -238,8 +239,9 @@ void CodeEdit::gotoLine(int line, int column) {
 }
 
 void CodeEdit::mousePressEvent(QMouseEvent *event) {
-    if (event->button() == Qt::LeftButton &&
-        (event->modifiers() & (Qt::ControlModifier | Qt::MetaModifier))) {
+    // Desktop: Ctrl-click. Android: Alt held (app-wide key track) — mouse
+    // events often omit modifiers; emulator steals Ctrl+click for pinch.
+    if (event->button() == Qt::LeftButton && isViewMouseClick(event)) {
         const QTextCursor cursor = cursorForPosition(event->position().toPoint());
         setTextCursor(cursor);
         const QString word = wordAtCursor();
@@ -280,6 +282,9 @@ void CodeEdit::contextMenuEvent(QContextMenuEvent *event) {
     setTextCursor(cursorForPosition(viewportPos));
     QMenu menu(this);
     QAction *view = menu.addAction(QStringLiteral("View Word"));
+#ifdef Q_OS_ANDROID
+    view->setText(QStringLiteral("View Word (or View mode / Alt+click)"));
+#endif
     QAction *breaks = menu.addAction(QStringLiteral("Toggle Breakpoint"));
     QAction *runto = menu.addAction(QStringLiteral("Run to Here"));
     menu.addSeparator();

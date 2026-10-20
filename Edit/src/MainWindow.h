@@ -14,6 +14,7 @@ class FindBar;
 class ForthConsole;
 class ForthFloat;
 class ForthPipe;
+class GraphicsBridge;
 class QComboBox;
 class QPushButton;
 class QShortcut;
@@ -34,6 +35,7 @@ public:
 protected:
     void closeEvent(QCloseEvent *event) override;
     void showEvent(QShowEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
@@ -136,11 +138,15 @@ private:
     ForthConsole *m_console = nullptr;
     ForthFloat *m_float = nullptr;
     ForthPipe *m_pipe = nullptr;
+#ifdef Q_OS_ANDROID
+    GraphicsBridge *m_gfx = nullptr;
+#endif
     QString m_forthDir;
     QAction *m_lineNumbersAction = nullptr;
     QAction *m_compareAction = nullptr;
     QAction *m_browseAction = nullptr;
     QAction *m_panAction = nullptr;
+    QAction *m_viewAction = nullptr;
     QAction *m_showConsoleAction = nullptr;
     QAction *m_splitAction = nullptr;
     QAction *m_wrapOff = nullptr;

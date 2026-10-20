@@ -1,10 +1,13 @@
 #include "ForthConsole.h"
 
+#include "ViewClick.h"
 #include "WheelScroll.h"
 
+#include <QContextMenuEvent>
 #include <QFont>
 #include <QInputMethodEvent>
 #include <QKeyEvent>
+#include <QMenu>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QScrollBar>
@@ -86,37 +89,55 @@ void ForthConsole::wheelEvent(QWheelEvent *event) {
     QPlainTextEdit::wheelEvent(event);
 }
 
+static QString forthTokenAt(const QString &text, int position)
+{
+    if (position < 0 || text.isEmpty())
+        return {};
+    if (position >= text.size())
+        --position;
+    if (position < 0 || text.at(position).isSpace())
+        return {};
+    int start = position;
+    int end = position + 1;
+    while (start > 0 && !text.at(start - 1).isSpace())
+        --start;
+    while (end < text.size() && !text.at(end).isSpace())
+        ++end;
+    return text.mid(start, end - start);
+}
+
 void ForthConsole::mousePressEvent(QMouseEvent *event) {
-    // Desktop uses Ctrl; macOS Command is Qt::ControlModifier in-app, but the
-    // Android emulator may deliver Command as Meta — accept either.
-    const bool viewClick =
-        event->button() == Qt::LeftButton &&
-        (event->modifiers() & (Qt::ControlModifier | Qt::MetaModifier));
-    if (viewClick) {
+    // Desktop: Ctrl-click. Android: Alt held (tracked app-wide — mouse events
+    // often omit modifiers) because the emulator steals Ctrl+click for pinch.
+    if (event->button() == Qt::LeftButton && isViewMouseClick(event)) {
         const QTextCursor cursor = cursorForPosition(event->position().toPoint());
-        const QString text = toPlainText();
-        int position = cursor.position();
-        if (position < 0 || position > text.size() || text.isEmpty()) {
-            QPlainTextEdit::mousePressEvent(event);
-            return;
-        }
-        if (position == text.size())
-            --position;
-        if (position >= 0 && !text.at(position).isSpace()) {
-            int start = position;
-            int end = position + 1;
-            while (start > 0 && !text.at(start - 1).isSpace())
-                --start;
-            while (end < text.size() && !text.at(end).isSpace())
-                ++end;
-            const QString word = text.mid(start, end - start);
-            if (!word.isEmpty())
-                emit viewWordRequested(word);
-        }
+        const QString word = forthTokenAt(toPlainText(), cursor.position());
+        if (!word.isEmpty())
+            emit viewWordRequested(word);
         event->accept();
         return;
     }
     QPlainTextEdit::mousePressEvent(event);
+}
+
+void ForthConsole::contextMenuEvent(QContextMenuEvent *event)
+{
+    const QPoint viewportPos = viewport()->mapFrom(this, event->pos());
+    setTextCursor(cursorForPosition(viewportPos));
+    const QString word = forthTokenAt(toPlainText(), textCursor().position());
+    QMenu menu(this);
+    QAction *view = menu.addAction(QStringLiteral("View Word"));
+    view->setEnabled(!word.isEmpty());
+#ifdef Q_OS_ANDROID
+    view->setText(QStringLiteral("View Word (or View mode / Alt+click)"));
+#endif
+    menu.addSeparator();
+    QAction *standard = menu.addAction(QStringLiteral("Standard Edit Menu"));
+    QAction *chosen = menu.exec(event->globalPos());
+    if (chosen == view && !word.isEmpty())
+        emit viewWordRequested(word);
+    else if (chosen == standard)
+        QPlainTextEdit::contextMenuEvent(event);
 }
 
 void ForthConsole::replaceInput(const QString &text) {

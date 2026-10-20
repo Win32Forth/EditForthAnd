@@ -8,9 +8,11 @@
 #include "FolderSearch.h"
 #include "ForthConsole.h"
 #include "ForthPipe.h"
+#include "ViewClick.h"
 #include "WebTab.h"
 #ifdef Q_OS_ANDROID
 #include "AndroidShip.h"
+#include "GraphicsBridge.h"
 #include "WheelScroll.h"
 #endif
 
@@ -18,6 +20,9 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QKeyEvent>
+#include <QResizeEvent>
+#include <QShowEvent>
 #include <QComboBox>
 #include <QDesktopServices>
 #include <QDialog>
@@ -265,6 +270,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     m_console = new ForthConsole(this);
     m_debug = new DebugBar(this);
     m_pipe = new ForthPipe(this);
+#ifdef Q_OS_ANDROID
+    // Mouse events on Android often omit Alt; track host Option/Alt app-wide.
+    qApp->installEventFilter(this);
+#endif
     connect(m_console, &ForthConsole::viewWordRequested, this, &MainWindow::viewWord);
     connect(m_console, &ForthConsole::submitted, this, [this](const QString &line) {
         if (isBye(line)) {
@@ -387,6 +396,32 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
             const QSignalBlocker block(m_panAction);
             m_panAction->setChecked(on);
         }
+        if (on) {
+            setAndroidViewMode(false);
+            m_debug->setViewChecked(false);
+            if (m_viewAction != nullptr) {
+                const QSignalBlocker block(m_viewAction);
+                m_viewAction->setChecked(false);
+            }
+            QSettings().setValue(QStringLiteral("androidViewMode"), false);
+        }
+    });
+    connect(m_debug, &DebugBar::viewToggled, this, [this](bool on) {
+        setAndroidViewMode(on);
+        QSettings().setValue(QStringLiteral("androidViewMode"), on);
+        if (m_viewAction != nullptr) {
+            const QSignalBlocker block(m_viewAction);
+            m_viewAction->setChecked(on);
+        }
+        if (on) {
+            setAndroidPanMode(false);
+            m_debug->setPanChecked(false);
+            if (m_panAction != nullptr) {
+                const QSignalBlocker block(m_panAction);
+                m_panAction->setChecked(false);
+            }
+            QSettings().setValue(QStringLiteral("androidPanMode"), false);
+        }
     });
 #endif
 
@@ -485,6 +520,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
                        "QMenuBar::item { padding: 8px 14px; background: transparent; }"
                        "QMenuBar::item:selected { background: #cfd8dc; }"));
     setCentralWidget(m_split);
+    m_gfx = new GraphicsBridge(this, this);
+    m_gfx->installHooks();
 #else
     setCentralWidget(m_split);
 #endif
@@ -604,6 +641,41 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
         setAndroidPanMode(on);
         QSettings().setValue(QStringLiteral("androidPanMode"), on);
         m_debug->setPanChecked(on);
+        if (on) {
+            setAndroidViewMode(false);
+            m_debug->setViewChecked(false);
+            if (m_viewAction != nullptr) {
+                const QSignalBlocker block(m_viewAction);
+                m_viewAction->setChecked(false);
+            }
+            QSettings().setValue(QStringLiteral("androidViewMode"), false);
+        }
+    });
+    // Emulator often omits Alt on mouse events; sticky View mode mirrors Pan.
+    m_viewAction = viewMenu->addAction(QStringLiteral("View click"));
+    m_viewAction->setCheckable(true);
+    m_viewAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_J));
+    m_viewAction->setStatusTip(
+        QStringLiteral("When checked, left-click a word opens its VIEW source."));
+    const bool viewOn = settings.value(QStringLiteral("androidViewMode"), false).toBool();
+    // Pan and View are mutually exclusive; prefer Pan if both were saved on.
+    const bool viewEffective = viewOn && !panOn;
+    m_viewAction->setChecked(viewEffective);
+    setAndroidViewMode(viewEffective);
+    m_debug->setViewChecked(viewEffective);
+    connect(m_viewAction, &QAction::toggled, this, [this](bool on) {
+        setAndroidViewMode(on);
+        QSettings().setValue(QStringLiteral("androidViewMode"), on);
+        m_debug->setViewChecked(on);
+        if (on) {
+            setAndroidPanMode(false);
+            m_debug->setPanChecked(false);
+            if (m_panAction != nullptr) {
+                const QSignalBlocker block(m_panAction);
+                m_panAction->setChecked(false);
+            }
+            QSettings().setValue(QStringLiteral("androidPanMode"), false);
+        }
     });
 #endif
     auto *allowEdit = new QShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E), this);
@@ -828,14 +900,21 @@ void MainWindow::openRequestedFile(const QString &text, int line) {
     const bool dialog = start.isEmpty() || start.endsWith(QLatin1Char('\\')) ||
                         start.endsWith(QLatin1Char('/'));
     if (!dialog) {
-        openFile(start);
+        // VIEW / Alt-click stamps are often relative (Library/…). Resolve under
+        // the Forth root before openFile, same as debug showHit.
+        const QString resolved = resolveDebugPath(start);
+        if (resolved.isEmpty()) {
+            if (m_debug != nullptr)
+                m_debug->setError(QStringLiteral("Can't open %1").arg(start));
+            return;
+        }
+        openFile(resolved);
         CodeEdit *edit = currentEdit();
         if (edit == nullptr)
             return;
-        const QString canonical = QFileInfo(start).absoluteFilePath();
-        if (edit->property(kPath).toString().compare(canonical, Qt::CaseInsensitive) != 0)
+        if (edit->property(kPath).toString().compare(resolved, Qt::CaseInsensitive) != 0)
             return;
-        // VIEW and Ctrl-click carry a line. Those opens are browse mode,
+        // VIEW and modifier-click carry a line. Those opens are browse mode,
         // including a file that was already open for editing.
         if (line > 0) {
             edit->setBrowse(true);
@@ -1078,6 +1157,16 @@ void MainWindow::closeEvent(QCloseEvent *event) {
 }
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
+#ifdef Q_OS_ANDROID
+    if (event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease) {
+        noteViewModKey(static_cast<QKeyEvent *>(event), event->type() == QEvent::KeyPress);
+    } else if (event->type() == QEvent::ApplicationStateChange &&
+               QGuiApplication::applicationState() != Qt::ApplicationActive) {
+        viewModHeld().store(false);
+    }
+#else
+    Q_UNUSED(watched);
+#endif
     if (watched == m_debug && !m_docked && event->type() == QEvent::Resize) {
         const int height = qMax(m_debug->height(), 1);
         if (m_bottom->maximumHeight() != height)
@@ -1553,11 +1642,21 @@ QString MainWindow::resolveDebugPath(const QString &path) const {
     if (given.isAbsolute())
         return given.exists() ? given.absoluteFilePath() : QString();
     QStringList roots;
-    if (!m_forthDir.isEmpty())
+    if (!m_forthDir.isEmpty()) {
         roots << m_forthDir;
+        roots << QDir(m_forthDir).filePath(QStringLiteral("Library"));
+    }
+#ifdef Q_OS_ANDROID
+    const QString androidDocs =
+        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) +
+        QStringLiteral("/EditForthAnd");
+    if (!roots.contains(androidDocs))
+        roots << androidDocs << QDir(androidDocs).filePath(QStringLiteral("Library"));
+#else
     const QString docs = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) +
                          QStringLiteral("/EditForthWin");
     roots << docs << QDir(docs).filePath(QStringLiteral("Library"));
+#endif
     for (const QString &root : roots) {
         const QFileInfo candidate(QDir(root).filePath(path));
         if (candidate.isFile())
@@ -1799,6 +1898,14 @@ void MainWindow::showEvent(QShowEvent *event) {
         if (sizes.size() == 3 && sizes.first() < 200)
             showAskPanel(true);
     }
+}
+
+void MainWindow::resizeEvent(QResizeEvent *event) {
+    QMainWindow::resizeEvent(event);
+#ifdef Q_OS_ANDROID
+    if (m_gfx != nullptr)
+        m_gfx->syncGeometry();
+#endif
 }
 
 void MainWindow::showAskPanel(bool on) {

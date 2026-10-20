@@ -1,5 +1,7 @@
 #include "WheelScroll.h"
 
+#include "ViewClick.h"
+
 #include <QAbstractScrollArea>
 #include <QApplication>
 #include <QEvent>
@@ -98,11 +100,13 @@ bool scrollAreaByPixels(QAbstractScrollArea *area, int dx, int dy) {
 }
 
 bool panChordActive(const QInputEvent *event) {
+    // Alt is reserved for VIEW (see ViewClick.h). Pan uses the Pan button
+    // and/or Shift — not Alt.
     if (g_panMode || g_shiftHeld)
         return true;
     if (event == nullptr)
         return false;
-    return (event->modifiers() & (Qt::ShiftModifier | Qt::AltModifier)) != 0;
+    return (event->modifiers() & Qt::ShiftModifier) != 0;
 }
 
 void endDrag(QObject *receiver) {
@@ -149,6 +153,9 @@ bool handleMousePan(QObject *receiver, QEvent *event) {
         auto *me = static_cast<QMouseEvent *>(event);
         if (me->button() == Qt::MiddleButton)
             return startDrag(receiver, me, Qt::MiddleButton);
+        // Let Alt/Meta VIEW clicks reach CodeEdit / ForthConsole.
+        if (me->button() == Qt::LeftButton && isViewMouseClick(me))
+            return false;
         if (me->button() == Qt::LeftButton && panChordActive(me))
             return startDrag(receiver, me, Qt::LeftButton);
         return false;

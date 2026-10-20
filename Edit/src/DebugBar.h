@@ -20,6 +20,7 @@ public:
     enum class ConsolePlace { Docked, Floating, Hidden };
     void setConsolePlace(ConsolePlace place);
     void setPanChecked(bool on);
+    void setViewChecked(bool on);
 
 signals:
     void pauseRequested();
@@ -37,6 +38,7 @@ signals:
     void dockToggleRequested();
     void quitRequested();
     void panToggled(bool on);
+    void viewToggled(bool on);
 
 private:
     void apply();
@@ -66,5 +68,6 @@ private:
     QPushButton *m_dock = nullptr;
     QPushButton *m_quit = nullptr;
     QPushButton *m_pan = nullptr;
+    QPushButton *m_view = nullptr;
     QDialog *m_breaks = nullptr;
 };

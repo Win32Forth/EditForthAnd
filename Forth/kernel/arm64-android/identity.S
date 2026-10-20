@@ -9,10 +9,10 @@
     .global kernel_console
 
 kernel_version:
-    .asciz "0.1.0"
+    .asciz "0.2.0"
     .p2align 3
 kernel_built:
-    .asciz "Android scaffold"
+    .asciz "Oct 20, 2026 4:31 PM"
     .p2align 3
 kernel_console:
     .asciz "EditForthAnd arm64"
