@@ -32,6 +32,38 @@ gcc -std=c11 -Wall -Wextra -Werror \
     Forth/host/android/emit_buf.c
 "$OUT/host_smoke"
 
+echo "== SYSTEM launch at Android API 26 (fork) and API 28 (posix_spawn) =="
+gcc -std=c11 -Wall -Wextra -Werror \
+    -D__ANDROID__ -D__ANDROID_API__=26 \
+    -I tests/include \
+    -I Forth/host/android \
+    -c -o "$OUT/host_android_api26.o" \
+    Forth/host/android/host_android.c
+if nm "$OUT/host_android_api26.o" | grep -q posix_spawn; then
+    echo "API 26 object still references posix_spawn" >&2
+    exit 1
+fi
+gcc -std=c11 -Wall -Wextra -Werror \
+    -D__ANDROID__ -D__ANDROID_API__=26 \
+    -I tests/include \
+    -I Forth/host/android \
+    -o "$OUT/host_smoke_api26" \
+    tests/host_smoke.c \
+    tests/edit_post_stub.c \
+    Forth/host/android/host_android.c \
+    Forth/host/android/emit_buf.c
+"$OUT/host_smoke_api26"
+gcc -std=c11 -Wall -Wextra -Werror \
+    -D__ANDROID__ -D__ANDROID_API__=28 \
+    -I tests/include \
+    -I Forth/host/android \
+    -c -o "$OUT/host_android_api28.o" \
+    Forth/host/android/host_android.c
+if ! nm "$OUT/host_android_api28.o" | grep -q posix_spawn; then
+    echo "API 28 object does not reference posix_spawn" >&2
+    exit 1
+fi
+
 if command -v aarch64-linux-gnu-gcc >/dev/null 2>&1 && command -v qemu-aarch64-static >/dev/null 2>&1; then
     echo "== aarch64 .S walk =="
     aarch64-linux-gnu-gcc -static -std=c11 -Wall -Wextra -Werror -o "$OUT/print_dots" \

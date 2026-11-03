@@ -75,6 +75,9 @@ reach `GCLOCK` and the other `GRAPHICS` programs.
 `/bin/sh` when that is the shell). Standard output and standard error are
 emitted to the console. `n` is the exit status, or `-1` when the command is
 empty or does not start. A command is stopped after 20 seconds.
+API 28 and later launch with `posix_spawn`. API 26 and 27, which is this
+app's minSdk, use `fork` and `exec` because Bionic does not declare
+`posix_spawn` until API 28.
 
 ## .S
 

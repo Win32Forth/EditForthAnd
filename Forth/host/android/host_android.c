@@ -8,7 +8,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
-#include <spawn.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,6 +16,17 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+
+/* Bionic declares posix_spawn only when __ANDROID_API__ >= 28.
+   minSdk is 26, and ANDROID_PLATFORM android-26 compiles this file at API 26,
+   so that call is a hard error. API 26 and 27 launch with fork/exec.
+   API 28 and later, and the Linux smoke build, keep posix_spawn. */
+#if defined(__ANDROID__) && __ANDROID_API__ < 28
+#define HOST_SYSTEM_USE_FORK 1
+#else
+#define HOST_SYSTEM_USE_FORK 0
+#include <spawn.h>
+#endif
 
 #include "emit_buf.h"
 #include "host_view.h"
@@ -145,6 +155,68 @@ static const char *android_shell(void)
     return "/bin/sh";
 }
 
+/* Launch sh -c. Returns 0 and stores the child pid, or -1. */
+static int launch_shell(char *line, int out_wr, int err_wr, int out_rd, int err_rd,
+                        pid_t *pid_out)
+{
+#if HOST_SYSTEM_USE_FORK
+    pid_t pid;
+    int nul;
+    const char *shell = android_shell();
+
+    pid = fork();
+    if (pid < 0)
+        return -1;
+    if (pid == 0) {
+        nul = open("/dev/null", O_RDONLY);
+        if (nul >= 0) {
+            dup2(nul, STDIN_FILENO);
+            if (nul > STDERR_FILENO)
+                close(nul);
+        }
+        dup2(out_wr, STDOUT_FILENO);
+        dup2(err_wr, STDERR_FILENO);
+        if (out_rd >= 0)
+            close(out_rd);
+        if (err_rd >= 0)
+            close(err_rd);
+        if (out_wr > STDERR_FILENO)
+            close(out_wr);
+        if (err_wr > STDERR_FILENO && err_wr != out_wr)
+            close(err_wr);
+        execl(shell, "sh", "-c", line, (char *)NULL);
+        _exit(127);
+    }
+    *pid_out = pid;
+    return 0;
+#else
+    posix_spawn_file_actions_t actions;
+    char *argv[4];
+    int spawned;
+
+    if (posix_spawn_file_actions_init(&actions) != 0)
+        return -1;
+    if (posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null",
+                                         O_RDONLY, 0) != 0 ||
+        posix_spawn_file_actions_adddup2(&actions, out_wr, STDOUT_FILENO) != 0 ||
+        posix_spawn_file_actions_adddup2(&actions, err_wr, STDERR_FILENO) != 0 ||
+        posix_spawn_file_actions_addclose(&actions, out_rd) != 0 ||
+        posix_spawn_file_actions_addclose(&actions, err_rd) != 0 ||
+        posix_spawn_file_actions_addclose(&actions, out_wr) != 0 ||
+        posix_spawn_file_actions_addclose(&actions, err_wr) != 0) {
+        posix_spawn_file_actions_destroy(&actions);
+        return -1;
+    }
+    argv[0] = (char *)"sh";
+    argv[1] = (char *)"-c";
+    argv[2] = line;
+    argv[3] = NULL;
+    spawned = posix_spawn(pid_out, android_shell(), &actions, NULL, argv, environ);
+    posix_spawn_file_actions_destroy(&actions);
+    return spawned == 0 ? 0 : -1;
+#endif
+}
+
 /* SYSTEM ( c-addr u -- n ). Run via sh -c in the Forth cwd.
    stdout and stderr are emitted. n is the exit status, or -1. */
 long long host_system(const char *cmd, long long n)
@@ -157,9 +229,6 @@ long long host_system(const char *cmd, long long n)
     int end;
     int status = 0;
     long long rc = -1;
-    posix_spawn_file_actions_t actions;
-    int actions_ok = 0;
-    char *argv[4];
     int waited_ms = 0;
     const int limit_ms = 20000;
 
@@ -197,34 +266,13 @@ long long host_system(const char *cmd, long long n)
             close(out_pipe[0]);
             close(out_pipe[1]);
         }
+        if (err_pipe[0] >= 0) {
+            close(err_pipe[0]);
+            close(err_pipe[1]);
+        }
         return -1;
     }
-    if (posix_spawn_file_actions_init(&actions) != 0) {
-        host_outs("SYSTEM: failed to launch\n");
-        free(line);
-        close(out_pipe[0]);
-        close(out_pipe[1]);
-        close(err_pipe[0]);
-        close(err_pipe[1]);
-        return -1;
-    }
-    actions_ok = 1;
-    if (posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null",
-                                         O_RDONLY, 0) != 0 ||
-        posix_spawn_file_actions_adddup2(&actions, out_pipe[1], STDOUT_FILENO) != 0 ||
-        posix_spawn_file_actions_adddup2(&actions, err_pipe[1], STDERR_FILENO) != 0 ||
-        posix_spawn_file_actions_addclose(&actions, out_pipe[0]) != 0 ||
-        posix_spawn_file_actions_addclose(&actions, err_pipe[0]) != 0 ||
-        posix_spawn_file_actions_addclose(&actions, out_pipe[1]) != 0 ||
-        posix_spawn_file_actions_addclose(&actions, err_pipe[1]) != 0) {
-        host_outs("SYSTEM: failed to launch\n");
-        goto done;
-    }
-    argv[0] = (char *)"sh";
-    argv[1] = (char *)"-c";
-    argv[2] = line;
-    argv[3] = NULL;
-    if (posix_spawn(&pid, android_shell(), &actions, NULL, argv, environ) != 0) {
+    if (launch_shell(line, out_pipe[1], err_pipe[1], out_pipe[0], err_pipe[0], &pid) != 0) {
         host_outs("SYSTEM: failed to launch\n");
         pid = 0;
         goto done;
@@ -303,8 +351,6 @@ long long host_system(const char *cmd, long long n)
     else
         rc = -1;
 done:
-    if (actions_ok)
-        posix_spawn_file_actions_destroy(&actions);
     if (out_pipe[0] >= 0)
         close(out_pipe[0]);
     if (out_pipe[1] >= 0)

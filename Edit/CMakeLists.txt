@@ -142,5 +142,9 @@ if(ANDROID)
         QT_ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android"
         QT_ANDROID_TARGET_SDK_VERSION 35
         QT_ANDROID_MIN_SDK_VERSION 26
+        # androidx.core 1.17.0, which Qt 6.12 puts on the Gradle classpath,
+        # fails to compile unless compileSdk and build-tools are 36.
+        QT_ANDROID_COMPILE_SDK_VERSION 36
+        QT_ANDROID_SDK_BUILD_TOOLS_REVISION "36.0.0"
     )
 endif()

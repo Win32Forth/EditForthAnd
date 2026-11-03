@@ -39,6 +39,11 @@ EditForthWin uses on Windows.
 - Autoload, virtual `HYPER.SPECS`, and path resolve:
   [android-host.md](android-host.md)
 
+Qt 6.12 pulls `androidx.core:core:1.17.0`, which needs **compileSdk 36** and
+**build-tools 36** (`platforms;android-36` and `build-tools;36.0.0`). minSdk
+stays 26. `Edit/CMakeLists.txt` sets `QT_ANDROID_COMPILE_SDK_VERSION` to 36
+and `QT_ANDROID_SDK_BUILD_TOOLS_REVISION` to `36.0.0`.
+
 ## Build from the command line (verified)
 
 ```bash
