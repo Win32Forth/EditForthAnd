@@ -3,7 +3,7 @@
 Android sibling of [EditForthWin](https://github.com/Win32Forth/EditForthWin).  
 Public domain (same spirit as the other EditForth trees).
 
-**Version:** 0.2.1 (`versionCode` 3)
+**Version:** 0.5.0 (`versionCode` 4)
 
 **Status:** Qt for Android runs the shared `Edit/` editor + Forth console on
 arm64-v8a. The kernel is generated from Windows `Forth/kernel/arm64` via
@@ -15,13 +15,14 @@ Hyper + `HYPER-REINDEX`). The host resolves `Library/` / `AutoLoad` /
 virtual `Config/HYPER.SPECS` from `HYPER.CFG`. File → Open / FLOAD use an
 in-app picker on Android so the session is not trapped in the system dialog.
 
-Working tree after 0.2.1 (version is unchanged; Tom publishes the next release):
+### 0.5.0 highlights
 
 - `.S` prints the real stack depth and skips the push sentinel (`(0):`, `(3): 1 2 3 `)
 - `SYSTEM` runs `sh -c` and emits its output; `CLIP!` / `CLIP@` use the clipboard
 - Find shows both rows, match counts, and search history, including the console
 - Android keypad, command history, hardware keys, and copy/paste
 - A second command while Forth is busy reports `busy — finish current command first`
+- Qt 6.12 packaging uses compileSdk 36 and build-tools 36.0.0. minSdk stays 26
 
 ### 0.2.1 highlights
 
@@ -95,8 +96,8 @@ re-pack and publish with `scripts/package-github-release.command [--publish]`.
 ## Console boot (expected)
 
 ```
-=== EditForthAnd arm64 0.2.1 === Oct 20, 2026 5:20 PM ===
-version=0.2.1  built=Oct 20, 2026 5:20 PM  console=EditForthAnd arm64
+=== EditForthAnd arm64 0.5.0 === Nov 3, 2026 7:59 AM ===
+version=0.5.0  built=Nov 3, 2026 7:59 AM  console=EditForthAnd arm64
 kernel_init => 0
 DEBUGGER_MODULE :Loading module
 EMITTER_MODULE :Loading module

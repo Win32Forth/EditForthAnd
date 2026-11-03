@@ -147,8 +147,8 @@ the editor opens the file.
 
 ## Verify quickly
 
-Marketing version **0.2.1** (`AndroidManifest` `versionName`, kernel
-`identity.S`, ship marker `0.2.1-resources`). Sideload kits ship on
+Marketing version **0.5.0** (`AndroidManifest` `versionName` and `versionCode` 4, kernel
+`identity.S`, ship marker `0.5.0-resources`). Sideload kits ship on
 [GitHub Releases](https://github.com/Win32Forth/EditForthAnd/releases)
 (`EditForthAnd-*-arm64.zip`); pack/publish with
 `scripts/package-github-release.command [--publish]`.

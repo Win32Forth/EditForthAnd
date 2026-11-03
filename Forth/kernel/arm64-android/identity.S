@@ -9,10 +9,10 @@
     .global kernel_console
 
 kernel_version:
-    .asciz "0.2.1"
+    .asciz "0.5.0"
     .p2align 3
 kernel_built:
-    .asciz "Oct 20, 2026 5:20 PM"
+    .asciz "Nov 3, 2026 7:59 AM"
     .p2align 3
 kernel_console:
     .asciz "EditForthAnd arm64"
