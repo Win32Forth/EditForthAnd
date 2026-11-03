@@ -3,6 +3,8 @@
 #include <QPlainTextEdit>
 #include <QStringList>
 
+class QMimeData;
+
 class QInputMethodEvent;
 
 // Docked Forth transcript. Engine output is protected. The tail is the input line.
@@ -20,6 +22,16 @@ public:
     void setInputLocked(bool locked);
     // Put the line just submitted back into the input area.
     void retractSubmit();
+    // Keypad and hardware helpers. They stay inside the input line.
+    void insertInputText(const QString &text);
+    void backspaceInput();
+    void submitLine();
+    void historyOlder();
+    void historyNewer();
+    void copySelection();
+    void pasteClipboard();
+    QStringList history() const { return m_history; }
+    void moveEditCursor(int key);
 
 signals:
     void submitted(const QString &line);
@@ -40,10 +52,13 @@ private:
 
 private:
     void replaceInput(const QString &text);
+    void placeCursorInInput();
     void submit();
     bool inputOnly(const QTextCursor &cursor) const;
+    bool recentlySubmitted() const;
     // Soft keyboards (Android) often commit "\n" instead of Key_Return.
-    bool trySubmitFromText(const QString &text);
+    // A commit may hold several lines. Returns true if a line was submitted.
+    bool applyCommit(const QString &text);
 
     int m_prot = 0;
     int m_commit_at = -1;
@@ -53,4 +68,5 @@ private:
     QStringList m_history;
     int m_history_at = -1;
     QString m_history_saved;
+    qint64 m_lastSubmitMs = 0;
 };

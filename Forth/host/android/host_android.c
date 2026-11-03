@@ -3,17 +3,28 @@
    Emit goes to a buffer that ForthPipe_android reads after kernel_eval.
    Facility/file stubs remain here; GRAPHICS is in host_gfx_android.c. */
 
+#define _GNU_SOURCE
+
+#include <errno.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <spawn.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "emit_buf.h"
 #include "host_view.h"
 
+extern char **environ;
+
 void host_outs(const char *s);
+void host_out(const void *p, size_t n);
 
 /* ---- time ---- */
 
@@ -112,7 +123,203 @@ long long host_accept(char *buf, long long n)
     return 0;
 }
 
-long long host_system(const char *cmd, long long n) { (void)cmd; (void)n; return -1; }
+static void drain_fd(int fd)
+{
+    char buf[1024];
+    ssize_t got;
+
+    if (fd < 0)
+        return;
+    for (;;) {
+        got = read(fd, buf, sizeof buf);
+        if (got <= 0)
+            return;
+        host_out(buf, (size_t)got);
+    }
+}
+
+static const char *android_shell(void)
+{
+    if (access("/system/bin/sh", X_OK) == 0)
+        return "/system/bin/sh";
+    return "/bin/sh";
+}
+
+/* SYSTEM ( c-addr u -- n ). Run via sh -c in the Forth cwd.
+   stdout and stderr are emitted. n is the exit status, or -1. */
+long long host_system(const char *cmd, long long n)
+{
+    char *line = NULL;
+    int out_pipe[2] = {-1, -1};
+    int err_pipe[2] = {-1, -1};
+    pid_t pid = 0;
+    int start;
+    int end;
+    int status = 0;
+    long long rc = -1;
+    posix_spawn_file_actions_t actions;
+    int actions_ok = 0;
+    char *argv[4];
+    int waited_ms = 0;
+    const int limit_ms = 20000;
+
+    if (cmd == NULL || n <= 0) {
+        host_outs("SYSTEM: empty command\n");
+        return -1;
+    }
+    if (n > 8192) {
+        host_outs("SYSTEM: command is too long\n");
+        return -1;
+    }
+    start = 0;
+    end = (int)n;
+    while (start < end && (cmd[start] == ' ' || cmd[start] == '\t' ||
+                           cmd[start] == '\r' || cmd[start] == '\n'))
+        start++;
+    while (end > start && (cmd[end - 1] == ' ' || cmd[end - 1] == '\t' ||
+                           cmd[end - 1] == '\r' || cmd[end - 1] == '\n'))
+        end--;
+    if (end <= start) {
+        host_outs("SYSTEM: empty command\n");
+        return -1;
+    }
+    line = (char *)malloc((size_t)(end - start) + 1);
+    if (line == NULL) {
+        host_outs("SYSTEM: failed to launch\n");
+        return -1;
+    }
+    memcpy(line, cmd + start, (size_t)(end - start));
+    line[end - start] = '\0';
+    if (pipe(out_pipe) != 0 || pipe(err_pipe) != 0) {
+        host_outs("SYSTEM: failed to launch\n");
+        free(line);
+        if (out_pipe[0] >= 0) {
+            close(out_pipe[0]);
+            close(out_pipe[1]);
+        }
+        return -1;
+    }
+    if (posix_spawn_file_actions_init(&actions) != 0) {
+        host_outs("SYSTEM: failed to launch\n");
+        free(line);
+        close(out_pipe[0]);
+        close(out_pipe[1]);
+        close(err_pipe[0]);
+        close(err_pipe[1]);
+        return -1;
+    }
+    actions_ok = 1;
+    if (posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null",
+                                         O_RDONLY, 0) != 0 ||
+        posix_spawn_file_actions_adddup2(&actions, out_pipe[1], STDOUT_FILENO) != 0 ||
+        posix_spawn_file_actions_adddup2(&actions, err_pipe[1], STDERR_FILENO) != 0 ||
+        posix_spawn_file_actions_addclose(&actions, out_pipe[0]) != 0 ||
+        posix_spawn_file_actions_addclose(&actions, err_pipe[0]) != 0 ||
+        posix_spawn_file_actions_addclose(&actions, out_pipe[1]) != 0 ||
+        posix_spawn_file_actions_addclose(&actions, err_pipe[1]) != 0) {
+        host_outs("SYSTEM: failed to launch\n");
+        goto done;
+    }
+    argv[0] = (char *)"sh";
+    argv[1] = (char *)"-c";
+    argv[2] = line;
+    argv[3] = NULL;
+    if (posix_spawn(&pid, android_shell(), &actions, NULL, argv, environ) != 0) {
+        host_outs("SYSTEM: failed to launch\n");
+        pid = 0;
+        goto done;
+    }
+    close(out_pipe[1]);
+    out_pipe[1] = -1;
+    close(err_pipe[1]);
+    err_pipe[1] = -1;
+    free(line);
+    line = NULL;
+    for (;;) {
+        fd_set rfds;
+        struct timeval tv;
+        int maxfd = -1;
+        int ready;
+
+        FD_ZERO(&rfds);
+        if (out_pipe[0] >= 0) {
+            FD_SET(out_pipe[0], &rfds);
+            maxfd = out_pipe[0];
+        }
+        if (err_pipe[0] >= 0) {
+            FD_SET(err_pipe[0], &rfds);
+            if (err_pipe[0] > maxfd)
+                maxfd = err_pipe[0];
+        }
+        tv.tv_sec = 0;
+        tv.tv_usec = 30000;
+        ready = (maxfd < 0) ? 0 : select(maxfd + 1, &rfds, NULL, NULL, &tv);
+        if (ready > 0) {
+            if (out_pipe[0] >= 0 && FD_ISSET(out_pipe[0], &rfds)) {
+                char buf[1024];
+                ssize_t got = read(out_pipe[0], buf, sizeof buf);
+                if (got > 0)
+                    host_out(buf, (size_t)got);
+                else {
+                    close(out_pipe[0]);
+                    out_pipe[0] = -1;
+                }
+            }
+            if (err_pipe[0] >= 0 && FD_ISSET(err_pipe[0], &rfds)) {
+                char buf[1024];
+                ssize_t got = read(err_pipe[0], buf, sizeof buf);
+                if (got > 0)
+                    host_out(buf, (size_t)got);
+                else {
+                    close(err_pipe[0]);
+                    err_pipe[0] = -1;
+                }
+            }
+        }
+        if (pid > 0 && waitpid(pid, &status, WNOHANG) == pid) {
+            pid = 0;
+            break;
+        }
+        waited_ms += 30;
+        if (waited_ms > limit_ms) {
+            if (pid > 0)
+                kill(pid, SIGKILL);
+            host_outs("SYSTEM: timed out\n");
+            if (pid > 0)
+                waitpid(pid, &status, 0);
+            pid = 0;
+            rc = -1;
+            goto done;
+        }
+    }
+    if (out_pipe[0] >= 0)
+        drain_fd(out_pipe[0]);
+    if (err_pipe[0] >= 0)
+        drain_fd(err_pipe[0]);
+    if (WIFEXITED(status))
+        rc = WEXITSTATUS(status);
+    else if (WIFSIGNALED(status))
+        rc = 128 + WTERMSIG(status);
+    else
+        rc = -1;
+done:
+    if (actions_ok)
+        posix_spawn_file_actions_destroy(&actions);
+    if (out_pipe[0] >= 0)
+        close(out_pipe[0]);
+    if (out_pipe[1] >= 0)
+        close(out_pipe[1]);
+    if (err_pipe[0] >= 0)
+        close(err_pipe[0]);
+    if (err_pipe[1] >= 0)
+        close(err_pipe[1]);
+    free(line);
+    if (pid > 0) {
+        kill(pid, SIGKILL);
+        waitpid(pid, &status, 0);
+    }
+    return rc;
+}
 void host_edit(const char *p, long long n)
 {
     android_edit_post(p, n, 1);
@@ -123,9 +330,25 @@ void host_edit_at(const char *p, long long n, long long line)
 }
 long long host_include_dialog(void) { return 0; }
 
-void host_clip_set(const char *p, long long n) { (void)p; (void)n; }
+static android_clip_set_fn clip_set_fn;
+static android_clip_get_fn clip_get_fn;
+
+void android_host_set_clip_hooks(android_clip_set_fn set, android_clip_get_fn get)
+{
+    clip_set_fn = set;
+    clip_get_fn = get;
+}
+
+void host_clip_set(const char *p, long long n)
+{
+    if (clip_set_fn != NULL)
+        clip_set_fn(p, n);
+}
+
 long long host_clip_get(char *dst, long long cap)
 {
+    if (clip_get_fn != NULL)
+        return clip_get_fn(dst, cap);
     if (dst && cap > 0)
         dst[0] = '\0';
     return 0;

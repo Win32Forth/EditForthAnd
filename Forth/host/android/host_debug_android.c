@@ -142,6 +142,11 @@ void host_debug_paint(void)
         debug_paint(armed, paused, line, off, len, name, path);
 }
 
+int android_debug_is_paused(void)
+{
+    return debug_busy != 0;
+}
+
 void android_debug_clear_key(void)
 {
     pthread_mutex_lock(&key_mu);

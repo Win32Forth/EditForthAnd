@@ -3,6 +3,7 @@
 #include "GraphicsWindow.h"
 #include "host_gfx_android.h"
 
+#include <QKeyEvent>
 #include <QMetaObject>
 #include <QThread>
 
@@ -79,10 +80,39 @@ void GraphicsBridge::installHooks()
     android_gfx_set_hooks(gfx_ui_open, gfx_ui_close, gfx_ui_refresh, gfx_ui_name);
 }
 
+void GraphicsBridge::setBottomInset(int pixels)
+{
+    m_bottomInset = pixels < 0 ? 0 : pixels;
+}
+
+bool GraphicsBridge::isOpen() const
+{
+    return m_window != nullptr && m_window->isVisible();
+}
+
+void GraphicsBridge::postKey(int key, const QString &text)
+{
+    if (!isOpen())
+        return;
+    QKeyEvent event(QEvent::KeyPress, key, Qt::NoModifier, text);
+    m_window->forwardKey(&event);
+    m_window->setFocus();
+}
+
+void GraphicsBridge::applyGeometry()
+{
+    if (m_window == nullptr || m_hostParent == nullptr)
+        return;
+    QRect rect = m_hostParent->rect();
+    if (m_bottomInset > 0 && rect.height() > m_bottomInset + 40)
+        rect.setHeight(rect.height() - m_bottomInset);
+    m_window->setGeometry(rect);
+}
+
 void GraphicsBridge::syncGeometry()
 {
-    if (m_window != nullptr && m_window->isVisible() && m_hostParent != nullptr)
-        m_window->setGeometry(m_hostParent->rect());
+    if (m_window != nullptr && m_window->isVisible())
+        applyGeometry();
 }
 
 long long GraphicsBridge::openOnUi(long long cols, long long rows)
@@ -96,8 +126,7 @@ long long GraphicsBridge::openOnUi(long long cols, long long rows)
                 m_window->hide();
         });
     }
-    if (m_hostParent != nullptr)
-        m_window->setGeometry(m_hostParent->rect());
+    applyGeometry();
     if (!g_pendingTitle.isEmpty())
         m_window->setTitleText(QString::fromUtf8(g_pendingTitle));
     m_window->openGrid(int(cols), int(rows));

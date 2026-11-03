@@ -27,6 +27,8 @@ int android_debug_signal_break(void);
 /* Wake a blocked KEY with ESC (shutdown / stop engine). */
 void android_debug_request_quit(void);
 void android_debug_clear_key(void);
+/* Non-zero while a debugger KEY is blocked (pause), not during a normal eval. */
+int android_debug_is_paused(void);
 
 #ifdef __cplusplus
 }

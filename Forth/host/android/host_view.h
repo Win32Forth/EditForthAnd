@@ -17,6 +17,11 @@ void android_edit_clear(void);
 void android_edit_post(const char *p, long long n, long long line);
 int android_edit_take(char *path, size_t path_cap, long long *line);
 
+/* CLIP! / CLIP@ . The Qt UI installs these; until then the clipboard is empty. */
+typedef void (*android_clip_set_fn)(const char *bytes, long long n);
+typedef long long (*android_clip_get_fn)(char *dst, long long cap);
+void android_host_set_clip_hooks(android_clip_set_fn set, android_clip_get_fn get);
+
 #ifdef __cplusplus
 }
 #endif

@@ -15,6 +15,14 @@ Hyper + `HYPER-REINDEX`). The host resolves `Library/` / `AutoLoad` /
 virtual `Config/HYPER.SPECS` from `HYPER.CFG`. File → Open / FLOAD use an
 in-app picker on Android so the session is not trapped in the system dialog.
 
+Working tree after 0.2.1 (version is unchanged; Tom publishes the next release):
+
+- `.S` prints the real stack depth and skips the push sentinel (`(0):`, `(3): 1 2 3 `)
+- `SYSTEM` runs `sh -c` and emits its output; `CLIP!` / `CLIP@` use the clipboard
+- Find shows both rows, match counts, and search history, including the console
+- Android keypad, command history, hardware keys, and copy/paste
+- A second command while Forth is busy reports `busy — finish current command first`
+
 ### 0.2.1 highlights
 
 - Fix `TIME&DATE` / `host_time_date` ABI (was crashing ANS / Facility)

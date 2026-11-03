@@ -34,7 +34,8 @@ EditForthWin uses on Windows.
 - Android packaging: `Edit/android/` + `androiddeployqt`
 - Forth engine: `libforthnative.so` from `Forth/kernel/arm64-android` +
   `Forth/host/android`, driven in-process by `ForthPipe_android.cpp`
-- Soft-keyboard Enter is handled in `ForthConsole` (IME newline → submit)
+- Soft-keyboard Enter is handled in `ForthConsole` (IME newline → submit).
+  The Android keypad is the touch path for Forth symbols and history.
 - Autoload, virtual `HYPER.SPECS`, and path resolve:
   [android-host.md](android-host.md)
 

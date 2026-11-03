@@ -1,6 +1,8 @@
 #include "ForthPipe.h"
 
+#include <QClipboard>
 #include <QCoreApplication>
+#include <QGuiApplication>
 #include <QMetaObject>
 #include <QStandardPaths>
 #include <QThread>
@@ -61,6 +63,50 @@ void android_paint_to_ui(int armed, int paused, int line, int off, int len, cons
 
 } // namespace
 
+extern "C" void android_clip_set_bridge(const char *bytes, long long n)
+{
+    QByteArray copy;
+    if (bytes != nullptr && n > 0)
+        copy = QByteArray(bytes, static_cast<int>(n));
+    auto apply = [copy]() {
+        if (QGuiApplication::clipboard() != nullptr)
+            QGuiApplication::clipboard()->setText(QString::fromUtf8(copy));
+    };
+    QCoreApplication *app = QCoreApplication::instance();
+    if (app == nullptr)
+        return;
+    if (QThread::currentThread() == app->thread())
+        apply();
+    else
+        QMetaObject::invokeMethod(app, apply, Qt::BlockingQueuedConnection);
+}
+
+extern "C" long long android_clip_get_bridge(char *dst, long long cap)
+{
+    if (dst == nullptr || cap <= 0)
+        return 0;
+    QString text;
+    auto apply = [&text]() {
+        if (QGuiApplication::clipboard() != nullptr)
+            text = QGuiApplication::clipboard()->text();
+    };
+    QCoreApplication *app = QCoreApplication::instance();
+    if (app == nullptr) {
+        dst[0] = '\0';
+        return 0;
+    }
+    if (QThread::currentThread() == app->thread())
+        apply();
+    else
+        QMetaObject::invokeMethod(app, apply, Qt::BlockingQueuedConnection);
+    QByteArray copy = text.toUtf8();
+    if (static_cast<long long>(copy.size()) >= cap)
+        copy.truncate(static_cast<int>(cap) - 1);
+    memcpy(dst, copy.constData(), static_cast<size_t>(copy.size()));
+    dst[copy.size()] = '\0';
+    return copy.size();
+}
+
 ForthPipe::ForthPipe(QObject *parent) : QObject(parent) { g_pipe = this; }
 
 ForthPipe::~ForthPipe()
@@ -74,6 +120,7 @@ void ForthPipe::start()
 {
     m_stop.store(false);
     g_pipe = this;
+    android_host_set_clip_hooks(android_clip_set_bridge, android_clip_get_bridge);
     kernel_set_emit(android_emit_char);
     emit_buf_set_flush(android_flush_emit_to_ui);
     kernel_set_key(android_debug_key);
@@ -177,12 +224,18 @@ QString ForthPipe::forthPath() const
     return QCoreApplication::applicationFilePath();
 }
 
+bool ForthPipe::isBusy() const { return g_eval_running.load(); }
+
 void ForthPipe::eval(const QString &line)
 {
     if (m_stop.load())
         return;
     if (g_eval_running.exchange(true)) {
-        emit statusError(QStringLiteral("debugger paused - use Step, Continue, or Stop"));
+        if (android_debug_is_paused())
+            emit statusError(QStringLiteral("debugger paused - use Step, Continue, or Stop"));
+        else
+            emit statusError(QStringLiteral("busy — finish current command first"));
+        emit evalRejected();
         return;
     }
     const QByteArray utf8 = line.toUtf8();
@@ -215,6 +268,7 @@ void ForthPipe::eval(const QString &line)
                 // host_debug_paint already notified during the run; a final
                 // idle paint keeps the DebugBar in sync after Stop/finish.
                 g_eval_running.store(false);
+                noteError(QString());
             },
             Qt::QueuedConnection);
     }).detach();

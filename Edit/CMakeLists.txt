@@ -16,6 +16,7 @@ set(EDIT_SOURCES
     src/FindBar.cpp
     src/FolderSearch.cpp
     src/ForthConsole.cpp
+    src/InputBar.cpp
     src/WebTab.cpp
     src/AskForth.cpp
     src/AskForthEmbed.cpp

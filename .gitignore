@@ -23,6 +23,8 @@ local.properties
 *~
 
 build-android/
+build-linux-smoke/
+.gradle/
 Edit/android-build/
 # Generated at build time from Forth/Resources
 Edit/android/assets/

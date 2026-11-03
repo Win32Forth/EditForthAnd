@@ -1,0 +1,26 @@
+// EditForthAnd is a Qt for Android app. androiddeployqt generates the APK
+// Gradle project when the Qt Android kit is installed (docs/qt-android-setup.md).
+// This root build runs the Linux host and .S smoke tests. It does not bump
+// the app version. Syntax stays compatible with the distro Gradle.
+
+task smokeTest(type: Exec) {
+    group = 'verification'
+    description = 'Host TIME&DATE/SYSTEM smoke and the .S depth walk'
+    commandLine 'bash', 'scripts/linux-smoke.sh'
+}
+
+task test {
+    group = 'verification'
+    description = 'Run the Linux smoke tests'
+    dependsOn smokeTest
+}
+
+task assemble {
+    group = 'build'
+    description = 'Smoke-test the host and kernel picture used by the Android build'
+    dependsOn smokeTest
+}
+
+task check {
+    dependsOn test
+}
