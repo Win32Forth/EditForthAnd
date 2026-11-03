@@ -48,6 +48,12 @@ CodeEdit::CodeEdit(QWidget *parent) : QPlainTextEdit(parent), m_gutter(new Gutte
 #ifdef Q_OS_ANDROID
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
     viewport()->installEventFilter(this);
+    // Same reason as the console: 0x2000 is Qt::ImhNoFullscreen, so the
+    // extract editor does not hide hardware keys or the keypad.
+    setInputMethodHints(Qt::ImhNoPredictiveText | Qt::ImhNoAutoUppercase |
+                        static_cast<Qt::InputMethodHint>(0x2000));
+    setFocusPolicy(Qt::StrongFocus);
+    setAttribute(Qt::WA_InputMethodEnabled, true);
 #endif
 
     connect(this, &CodeEdit::blockCountChanged, this, [this](int) { updateGutterWidth(); });
@@ -288,7 +294,9 @@ void CodeEdit::contextMenuEvent(QContextMenuEvent *event) {
     QAction *breaks = menu.addAction(QStringLiteral("Toggle Breakpoint"));
     QAction *runto = menu.addAction(QStringLiteral("Run to Here"));
     menu.addSeparator();
-    QAction *standard = menu.addAction(QStringLiteral("Standard Edit Menu"));
+    QAction *copyAction = menu.addAction(QStringLiteral("Copy"));
+    QAction *pasteAction = menu.addAction(QStringLiteral("Paste"));
+    pasteAction->setEnabled(!isReadOnly() && !m_browse);
     QAction *chosen = menu.exec(event->globalPos());
     if (chosen == view || chosen == breaks) {
         const QString word = wordAtCursor();
@@ -300,8 +308,10 @@ void CodeEdit::contextMenuEvent(QContextMenuEvent *event) {
             emit breakWordRequested(word);
     } else if (chosen == runto) {
         emit runToRequested(utf8OffsetOfWord());
-    } else if (chosen == standard) {
-        QPlainTextEdit::contextMenuEvent(event);
+    } else if (chosen == copyAction) {
+        QPlainTextEdit::copy();
+    } else if (chosen == pasteAction) {
+        QPlainTextEdit::paste();
     }
 }
 

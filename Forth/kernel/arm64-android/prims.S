@@ -641,38 +641,57 @@ XBYE:
 XBYE_END:
 XRESTART:
     b _interpret_loop
+// .S depth matches DEPTH and the Mac kernel.
+// Empty: DSP == SP0, x20 unused. Each DPUSH stores the previous TOS and
+// leaves a bottom sentinel, so depth = (SP0 - DSP) / 8. Skip that sentinel.
+// Picture is (n): oldest ... TOS. Do not add 1, and do not print the 0 cell.
 _print_dots:
     sub sp, sp, #80
     stp x29, x30, [sp, #32]
     stp x25, x26, [sp, #48]
-    adrp x0, :got:msg_open
-    ldr x0, [x0, :got_lo12:msg_open]
-    bl emit_cstr
     adrp x25, :got:dstack
     ldr x25, [x25, :got_lo12:dstack]
     add x25, x25, #1, lsl #12
+    cmp x22, x25
+    b.hs _pd_empty
     sub x26, x25, x22
     lsr x26, x26, #3
-    add x0, x26, #1
-    bl _print_signed
-    adrp x0, :got:msg_mid
-    ldr x0, [x0, :got_lo12:msg_mid]
-    bl emit_cstr
-    sub x25, x25, #8
-_print_dots_loop:
-    cmp x25, x22
-    b.lo _print_dots_tos
-    ldr x0, [x25]
+    mov x0, #40
+    bl _putchar
+    mov x0, x26
+    bl _print_unsigned
+    mov x0, #41
+    bl _putchar
+    mov x0, #58
+    bl _putchar
+    mov x0, #32
+    bl _putchar
+    cmp x26, #1
+    b.eq _pd_tos
+    sub x25, x26, #1
+_pd_mem:
+    sub x25, x25, #1
+    ldr x0, [x22, x25, lsl #3]
     bl _print_signed
     mov x0, #32
     bl _putchar
-    sub x25, x25, #8
-    b _print_dots_loop
-_print_dots_tos:
+    cbnz x25, _pd_mem
+_pd_tos:
     mov x0, x20
     bl _print_signed
     mov x0, #32
     bl _putchar
+    b _pd_done
+_pd_empty:
+    mov x0, #40
+    bl _putchar
+    mov x0, #48
+    bl _putchar
+    mov x0, #41
+    bl _putchar
+    mov x0, #58
+    bl _putchar
+_pd_done:
     ldp x25, x26, [sp, #48]
     ldp x29, x30, [sp, #32]
     add sp, sp, #80

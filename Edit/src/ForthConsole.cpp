@@ -4,7 +4,10 @@
 #include "WheelScroll.h"
 
 #include <QContextMenuEvent>
+#include <QDateTime>
 #include <QFont>
+#include <QGuiApplication>
+#include <QClipboard>
 #include <QInputMethodEvent>
 #include <QKeyEvent>
 #include <QMenu>
@@ -23,8 +26,14 @@ ForthConsole::ForthConsole(QWidget *parent) : QPlainTextEdit(parent) {
     setUndoRedoEnabled(false);
     setAccessibleName(QStringLiteral("Forth console"));
     // Soft keyboards: prefer an action key over inserting a raw newline.
+    // 0x2000 is Qt::ImhNoFullscreen. It keeps Gboard from opening a separate
+    // field that skips this widget's Enter and Backspace handling. The name
+    // is missing from some Qt 6.4 headers; Qt 6.8+ publishes it. Hardware
+    // keys still arrive here.
     setInputMethodHints(Qt::ImhNoPredictiveText | Qt::ImhNoAutoUppercase |
-                        Qt::ImhPreferLatin);
+                        Qt::ImhPreferLatin | static_cast<Qt::InputMethodHint>(0x2000));
+    setFocusPolicy(Qt::StrongFocus);
+    setAttribute(Qt::WA_InputMethodEnabled, true);
     // Android often hides scrollbars; keep one so scroll is possible without a wheel.
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
     // Wheel events land on the viewport, not always on this widget.
@@ -132,12 +141,16 @@ void ForthConsole::contextMenuEvent(QContextMenuEvent *event)
     view->setText(QStringLiteral("View Word (or View mode / Alt+click)"));
 #endif
     menu.addSeparator();
-    QAction *standard = menu.addAction(QStringLiteral("Standard Edit Menu"));
+    QAction *copy = menu.addAction(QStringLiteral("Copy"));
+    QAction *paste = menu.addAction(QStringLiteral("Paste"));
+    paste->setEnabled(m_alive && !m_locked);
     QAction *chosen = menu.exec(event->globalPos());
     if (chosen == view && !word.isEmpty())
         emit viewWordRequested(word);
-    else if (chosen == standard)
-        QPlainTextEdit::contextMenuEvent(event);
+    else if (chosen == copy)
+        copySelection();
+    else if (chosen == paste)
+        pasteClipboard();
 }
 
 void ForthConsole::replaceInput(const QString &text) {
@@ -146,6 +159,97 @@ void ForthConsole::replaceInput(const QString &text) {
     cursor.movePosition(QTextCursor::End, QTextCursor::KeepAnchor);
     cursor.insertText(text);
     setTextCursor(cursor);
+}
+
+void ForthConsole::placeCursorInInput() {
+    QTextCursor cursor = textCursor();
+    if (!inputOnly(cursor)) {
+        cursor.setPosition(toPlainText().size());
+        setTextCursor(cursor);
+    }
+}
+
+void ForthConsole::insertInputText(const QString &text) {
+    if (!m_alive || m_locked || text.isEmpty())
+        return;
+    applyCommit(text);
+    setFocus();
+}
+
+void ForthConsole::backspaceInput() {
+    if (!m_alive || m_locked)
+        return;
+    placeCursorInInput();
+    QTextCursor cursor = textCursor();
+    if (cursor.position() <= m_prot && !cursor.hasSelection())
+        return;
+    if (cursor.hasSelection() && cursor.selectionStart() < m_prot)
+        return;
+    cursor.deletePreviousChar();
+    setTextCursor(cursor);
+    setFocus();
+}
+
+void ForthConsole::submitLine() {
+    if (!m_alive || m_locked)
+        return;
+    if (toPlainText().mid(m_prot).isEmpty() && recentlySubmitted())
+        return;
+    submit();
+    setFocus();
+}
+
+void ForthConsole::historyOlder() {
+    if (!m_alive || m_locked || m_history.isEmpty())
+        return;
+    if (m_history_at < 0) {
+        m_history_saved = toPlainText().mid(m_prot);
+        m_history_at = m_history.size() - 1;
+    } else if (m_history_at > 0) {
+        m_history_at--;
+    }
+    replaceInput(m_history.at(m_history_at));
+    setFocus();
+}
+
+void ForthConsole::historyNewer() {
+    if (!m_alive || m_locked || m_history_at < 0)
+        return;
+    m_history_at++;
+    if (m_history_at >= m_history.size()) {
+        m_history_at = -1;
+        replaceInput(m_history_saved);
+    } else {
+        replaceInput(m_history.at(m_history_at));
+    }
+    setFocus();
+}
+
+void ForthConsole::copySelection() {
+    QTextCursor cursor = textCursor();
+    QString text = cursor.hasSelection() ? cursor.selectedText() : toPlainText().mid(m_prot);
+    text.replace(QChar(0x2029), QLatin1Char('\n'));
+    if (text.isEmpty())
+        return;
+    QGuiApplication::clipboard()->setText(text);
+}
+
+void ForthConsole::pasteClipboard() {
+    if (!m_alive || m_locked)
+        return;
+    const QString text = QGuiApplication::clipboard()->text();
+    if (text.isEmpty())
+        return;
+    applyCommit(text);
+    setFocus();
+}
+
+void ForthConsole::moveEditCursor(int key) {
+    QKeyEvent event(QEvent::KeyPress, key, Qt::NoModifier);
+    if (key == Qt::Key_Up || key == Qt::Key_Down || key == Qt::Key_Left ||
+        key == Qt::Key_Right || key == Qt::Key_Home || key == Qt::Key_End) {
+        QPlainTextEdit::keyPressEvent(&event);
+    }
 }
 
 bool ForthConsole::inputOnly(const QTextCursor &cursor) const {
@@ -175,32 +279,45 @@ void ForthConsole::submit() {
     }
     m_history_at = -1;
     m_history_saved.clear();
+    m_lastSubmitMs = QDateTime::currentMSecsSinceEpoch();
     emit submitted(line);
 }
 
-bool ForthConsole::trySubmitFromText(const QString &text) {
-    int cut = -1;
-    for (int i = 0; i < text.size(); ++i) {
-        const QChar ch = text.at(i);
-        if (ch == QLatin1Char('\n') || ch == QLatin1Char('\r')) {
-            cut = i;
+bool ForthConsole::recentlySubmitted() const {
+    return QDateTime::currentMSecsSinceEpoch() - m_lastSubmitMs < 250;
+}
+
+bool ForthConsole::applyCommit(const QString &text) {
+    QString rest = text;
+    rest.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    rest.replace(QLatin1Char('\r'), QLatin1Char('\n'));
+    if ((rest == QLatin1String("\n") || rest.isEmpty()) &&
+        toPlainText().mid(m_prot).isEmpty() && recentlySubmitted())
+        return true;
+    bool submitted = false;
+    while (true) {
+        const int cut = rest.indexOf(QLatin1Char('\n'));
+        if (cut < 0) {
+            if (!rest.isEmpty()) {
+                placeCursorInInput();
+                QTextCursor cursor = textCursor();
+                cursor.insertText(rest);
+                setTextCursor(cursor);
+            }
             break;
         }
-    }
-    if (cut < 0)
-        return false;
-    const QString prefix = text.left(cut);
-    if (!prefix.isEmpty()) {
-        QTextCursor cursor = textCursor();
-        if (!inputOnly(cursor)) {
-            cursor.setPosition(toPlainText().size());
+        const QString prefix = rest.left(cut);
+        if (!prefix.isEmpty()) {
+            placeCursorInInput();
+            QTextCursor cursor = textCursor();
+            cursor.insertText(prefix);
             setTextCursor(cursor);
-            cursor = textCursor();
         }
-        cursor.insertText(prefix);
+        submit();
+        submitted = true;
+        rest = rest.mid(cut + 1);
     }
-    submit();
-    return true;
+    return submitted;
 }
 
 void ForthConsole::retractSubmit() {
@@ -235,15 +352,25 @@ void ForthConsole::inputMethodEvent(QInputMethodEvent *event) {
         return;
     }
     const QString commit = event->commitString();
-    if (!commit.isEmpty() && trySubmitFromText(commit)) {
+    if (!commit.isEmpty()) {
+        applyCommit(commit);
         event->accept();
         return;
     }
-    QTextCursor cursor = textCursor();
-    if (!commit.isEmpty() && !inputOnly(cursor)) {
-        cursor.setPosition(toPlainText().size());
-        setTextCursor(cursor);
+    // Some IMEs delete with a replacement and no commit string.
+    if (event->replacementLength() > 0 && event->preeditString().isEmpty()) {
+        placeCursorInInput();
+        QTextCursor cursor = textCursor();
+        if (!cursor.hasSelection() && cursor.position() <= m_prot) {
+            event->accept();
+            return;
+        }
+        if (cursor.hasSelection() && cursor.selectionStart() < m_prot) {
+            event->accept();
+            return;
+        }
     }
+    placeCursorInInput();
     QPlainTextEdit::inputMethodEvent(event);
 }
 
@@ -272,6 +399,11 @@ void ForthConsole::keyPressEvent(QKeyEvent *event) {
         return;
     }
 
+    if (event->key() == Qt::Key_Tab) {
+        insertInputText(QStringLiteral(" "));
+        return;
+    }
+
     QTextCursor cursor = textCursor();
     if (event->matches(QKeySequence::Paste) || event->key() == Qt::Key_Return ||
         event->key() == Qt::Key_Enter || event->key() == Qt::Key_Backspace ||
@@ -283,11 +415,16 @@ void ForthConsole::keyPressEvent(QKeyEvent *event) {
     }
 
     if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+        // A soft keyboard often sends both this key and an IME newline.
+        if (toPlainText().mid(m_prot).isEmpty() && recentlySubmitted())
+            return;
         submit();
         return;
     }
-    if (trySubmitFromText(event->text()))
+    if (event->text().contains(QLatin1Char('\n')) || event->text().contains(QLatin1Char('\r'))) {
+        applyCommit(event->text());
         return;
+    }
     if (event->key() == Qt::Key_Backspace) {
         cursor = textCursor();
         if (cursor.position() <= m_prot && !cursor.hasSelection())
@@ -302,26 +439,12 @@ void ForthConsole::keyPressEvent(QKeyEvent *event) {
         if (cursor.hasSelection() && cursor.selectionStart() < m_prot)
             return;
     }
-    if (event->key() == Qt::Key_Up || event->key() == Qt::Key_Down) {
-        if (m_history.isEmpty())
-            return;
-        if (event->key() == Qt::Key_Up) {
-            if (m_history_at < 0) {
-                m_history_saved = toPlainText().mid(m_prot);
-                m_history_at = m_history.size() - 1;
-            } else if (m_history_at > 0) {
-                m_history_at--;
-            }
-            replaceInput(m_history.at(m_history_at));
-        } else if (m_history_at >= 0) {
-            m_history_at++;
-            if (m_history_at >= m_history.size()) {
-                m_history_at = -1;
-                replaceInput(m_history_saved);
-            } else {
-                replaceInput(m_history.at(m_history_at));
-            }
-        }
+    if (event->key() == Qt::Key_Up && (event->modifiers() & Qt::ControlModifier) == 0) {
+        historyOlder();
+        return;
+    }
+    if (event->key() == Qt::Key_Down && (event->modifiers() & Qt::ControlModifier) == 0) {
+        historyNewer();
         return;
     }
     if (event->matches(QKeySequence::Cut))
@@ -330,12 +453,7 @@ void ForthConsole::keyPressEvent(QKeyEvent *event) {
 }
 
 void ForthConsole::insertFromMimeData(const QMimeData *source) {
-    if (!m_alive || m_locked || source == NULL)
+    if (!m_alive || m_locked || source == NULL || !source->hasText())
         return;
-    QTextCursor cursor = textCursor();
-    if (!inputOnly(cursor)) {
-        cursor.setPosition(toPlainText().size());
-        setTextCursor(cursor);
-    }
-    QPlainTextEdit::insertFromMimeData(source);
+    applyCommit(source->text());
 }

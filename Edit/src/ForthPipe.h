@@ -36,6 +36,8 @@ public:
     void requestRunTo(int utf8Offset);
     bool signalBreak();
     QString forthPath() const;
+    // True while an eval is still running, including a debugger pause.
+    bool isBusy() const;
 
 public slots:
     void eval(const QString &line);
@@ -63,6 +65,7 @@ signals:
     void editReceived(const QString &path, int line);
     void lastReceived(const QString &name);
     void versionReceived(const QString &text);
+    void evalRejected();
 
 private:
     void post(const QByteArray &json);

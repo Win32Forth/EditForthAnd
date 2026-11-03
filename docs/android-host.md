@@ -47,6 +47,44 @@ and serves it from a `host_mem` slot when Forth opens basename `HYPER.SPECS`.
 
 `HYPER-REINDEX` therefore uses the full SPECS set instead of the fallback list.
 
+## Console input
+
+The docked console keeps a protected transcript and an input line. On Android
+a keypad sits under the editor/console split (Forth punctuation, `DUP` /
+`DROP` / `SWAP` / `.S` / `CR`, arrows, backspace, Enter, history, copy, paste,
+Find, Split, and View). Buttons do not take focus, so a hardware keyboard
+still types into the editor or the console. Up and Down recall commands.
+Copy and Paste are on the keypad and the long-press menu. `CLIP!` / `CLIP@`
+use the Android clipboard.
+
+Soft keyboards stay in the widget (`ImhNoFullscreen`) instead of a separate
+extract field. Enter from a hardware key and a newline from the IME both
+submit, and a second newline in the same instant does not submit an empty
+line. Backspace stops at the protected transcript.
+
+While Forth is still evaluating, another line is put back and the DebugBar
+says `busy — finish current command first`. A line typed during a debugger
+pause still says to use Step, Continue, or Stop.
+
+The graphics overlay leaves the keypad visible, so Esc, Enter, and Space
+reach `GCLOCK` and the other `GRAPHICS` programs.
+
+## SYSTEM
+
+`SYSTEM ( c-addr u -- n )` runs the text with `/system/bin/sh -c` (or
+`/bin/sh` when that is the shell). Standard output and standard error are
+emitted to the console. `n` is the exit status, or `-1` when the command is
+empty or does not start. A command is stopped after 20 seconds.
+API 28 and later launch with `posix_spawn`. API 26 and 27, which is this
+app's minSdk, use `fork` and `exec` because Bionic does not declare
+`posix_spawn` until API 28.
+
+## .S
+
+`.S` uses the same depth as `DEPTH`. An empty stack prints `(0):`. A push
+leaves a sentinel under the values; `.S` does not count or print that cell.
+`1 2 3 .S` prints `(3): 1 2 3 `.
+
 ## File dialogs
 
 On Android, source opens (File → Open, EDIT, FLOAD) use non-native

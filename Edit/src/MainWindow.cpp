@@ -8,6 +8,7 @@
 #include "FolderSearch.h"
 #include "ForthConsole.h"
 #include "ForthPipe.h"
+#include "InputBar.h"
 #include "ViewClick.h"
 #include "WebTab.h"
 #ifdef Q_OS_ANDROID
@@ -20,7 +21,9 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QCursor>
 #include <QKeyEvent>
+#include <QMenu>
 #include <QResizeEvent>
 #include <QShowEvent>
 #include <QComboBox>
@@ -259,7 +262,11 @@ protected:
 };
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
+#ifdef Q_OS_ANDROID
+    setWindowTitle(QStringLiteral("EditForthAnd"));
+#else
     setWindowTitle(QStringLiteral("EditForthWin"));
+#endif
     setMinimumSize(640, 420);
 
     m_tabs = new QTabWidget(this);
@@ -282,9 +289,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
                 m_console->retractSubmit();
             return;
         }
-        if (m_armed) {
+        if (m_paused) {
             m_console->retractSubmit();
             m_debug->setError(QStringLiteral("debugger paused - use Step, Continue, or Stop"));
+            return;
+        }
+        if (m_pipe->isBusy()) {
+            m_console->retractSubmit();
+            m_debug->setError(QStringLiteral("busy — finish current command first"));
             return;
         }
         const BareSource bare = bareSource(line);
@@ -360,6 +372,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     connect(m_pipe, &ForthPipe::debugReceived, this, &MainWindow::onDebug);
     connect(m_pipe, &ForthPipe::breaksReceived, m_debug, &DebugBar::setBreaks);
     connect(m_pipe, &ForthPipe::statusError, m_debug, &DebugBar::setError);
+    connect(m_pipe, &ForthPipe::evalRejected, this, [this] { m_console->retractSubmit(); });
     connect(m_pipe, &ForthPipe::editReceived, this, &MainWindow::openRequestedFile);
     connect(m_pipe, &ForthPipe::lastReceived, this, &MainWindow::onLastName);
     connect(m_pipe, &ForthPipe::versionReceived, this, [this](const QString &text) {
@@ -519,9 +532,34 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
         QStringLiteral("QMenuBar { background: #eceff1; padding: 4px; font-size: 15px; }"
                        "QMenuBar::item { padding: 8px 14px; background: transparent; }"
                        "QMenuBar::item:selected { background: #cfd8dc; }"));
-    setCentralWidget(m_split);
+    m_inputBar = new InputBar(this);
+    auto *central = new QWidget(this);
+    auto *centralLayout = new QVBoxLayout(central);
+    centralLayout->setContentsMargins(0, 0, 0, 0);
+    centralLayout->setSpacing(0);
+    centralLayout->addWidget(m_split, 1);
+    centralLayout->addWidget(m_inputBar);
+    setCentralWidget(central);
+    connect(m_inputBar, &InputBar::insertText, this, &MainWindow::routeInsert);
+    connect(m_inputBar, &InputBar::backspacePressed, this, &MainWindow::routeBackspace);
+    connect(m_inputBar, &InputBar::enterPressed, this, &MainWindow::routeEnter);
+    connect(m_inputBar, &InputBar::escapePressed, this, &MainWindow::routeEscape);
+    connect(m_inputBar, &InputBar::tabPressed, this, &MainWindow::routeTab);
+    connect(m_inputBar, &InputBar::arrowPressed, this, &MainWindow::routeArrow);
+    connect(m_inputBar, &InputBar::historyOlder, m_console, &ForthConsole::historyOlder);
+    connect(m_inputBar, &InputBar::historyNewer, m_console, &ForthConsole::historyNewer);
+    connect(m_inputBar, &InputBar::historyMenu, this, &MainWindow::showHistoryMenu);
+    connect(m_inputBar, &InputBar::copyPressed, this, &MainWindow::routeCopy);
+    connect(m_inputBar, &InputBar::pastePressed, this, &MainWindow::routePaste);
+    connect(m_inputBar, &InputBar::findPressed, this, [this] { showFind(true); });
+    connect(m_inputBar, &InputBar::splitPressed, this, &MainWindow::toggleSplit);
+    connect(m_inputBar, &InputBar::viewPressed, this, [this] {
+        if (m_viewAction != nullptr)
+            m_viewAction->toggle();
+    });
     m_gfx = new GraphicsBridge(this, this);
     m_gfx->installHooks();
+    syncGraphicsInset();
 #else
     setCentralWidget(m_split);
 #endif
@@ -534,6 +572,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
         for (QWidget *widget = now; widget != nullptr; widget = widget->parentWidget()) {
             if (auto *edit = qobject_cast<CodeEdit *>(widget)) {
                 m_find->attach(edit);
+                m_find->setReplaceEnabled(!edit->browse());
+                break;
+            }
+            if (widget == m_console) {
+                m_find->attach(m_console);
+                m_find->setReplaceEnabled(false);
                 break;
             }
         }
@@ -854,7 +898,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     helpMenu->addAction(QStringLiteral("EditForthWin Startup &Messages"), this,
                         &MainWindow::showStartupMessages);
 #endif
+#ifdef Q_OS_ANDROID
+    helpMenu->addAction(QStringLiteral("&About EditForthAnd"), this, &MainWindow::showAbout);
+#else
     helpMenu->addAction(QStringLiteral("&About EditForthWin"), this, &MainWindow::showAbout);
+#endif
 
 #ifndef Q_OS_ANDROID
     statusBar();
@@ -1567,7 +1615,13 @@ void MainWindow::showStartupMessages() {
 }
 
 void MainWindow::showAbout() {
+#ifdef Q_OS_ANDROID
+    QString body = QStringLiteral("EditForthAnd");
+    const QString title = QStringLiteral("About EditForthAnd");
+#else
     QString body = QStringLiteral("EditForthWin");
+    const QString title = QStringLiteral("About EditForthWin");
+#endif
     if (m_engineVersion.isEmpty()) {
         body += QStringLiteral("\n\nThe Forth engine has not reported its version yet.");
     } else {
@@ -1575,7 +1629,7 @@ void MainWindow::showAbout() {
         if (!m_engineBuilt.isEmpty())
             body += QStringLiteral("\n%1").arg(m_engineBuilt);
     }
-    QMessageBox::about(this, QStringLiteral("About EditForthWin"), body);
+    QMessageBox::about(this, title, body);
 }
 
 void MainWindow::updateDebugKeys() {
@@ -1821,17 +1875,182 @@ void MainWindow::runToHere(int utf8Offset) {
     m_pipe->requestRunTo(utf8Offset);
 }
 
-void MainWindow::showFind(bool replace) {
-    CodeEdit *edit = currentEdit();
-    if (edit == nullptr) {
-        statusBar()->showMessage(QStringLiteral("Find needs a source tab."));
+CodeEdit *MainWindow::focusedEdit() const {
+    for (QWidget *widget = QApplication::focusWidget(); widget != nullptr;
+         widget = widget->parentWidget()) {
+        if (auto *edit = qobject_cast<CodeEdit *>(widget))
+            return edit;
+    }
+    return nullptr;
+}
+
+void MainWindow::routeInsert(const QString &text) {
+#ifdef Q_OS_ANDROID
+    if (m_gfx != nullptr && m_gfx->isOpen()) {
+        for (const QChar ch : text) {
+            if (ch.unicode() > 0 && ch.unicode() < 128)
+                m_gfx->postKey(ch.unicode(), QString(ch));
+        }
         return;
     }
-    m_find->attach(edit);
-    if (replace)
-        m_find->showReplace();
-    else
-        m_find->showFind();
+#endif
+    if (CodeEdit *edit = focusedEdit()) {
+        if (!edit->browse() && !edit->isReadOnly())
+            edit->insertPlainText(text);
+        edit->setFocus();
+        return;
+    }
+    m_console->insertInputText(text);
+}
+
+void MainWindow::routeBackspace() {
+#ifdef Q_OS_ANDROID
+    if (m_gfx != nullptr && m_gfx->isOpen()) {
+        m_gfx->postKey(Qt::Key_Backspace, QString(QChar(8)));
+        return;
+    }
+#endif
+    if (CodeEdit *edit = focusedEdit()) {
+        if (edit->browse() || edit->isReadOnly())
+            return;
+        QTextCursor cursor = edit->textCursor();
+        cursor.deletePreviousChar();
+        edit->setTextCursor(cursor);
+        edit->setFocus();
+        return;
+    }
+    m_console->backspaceInput();
+}
+
+void MainWindow::routeEnter() {
+#ifdef Q_OS_ANDROID
+    if (m_gfx != nullptr && m_gfx->isOpen()) {
+        m_gfx->postKey(Qt::Key_Return, QStringLiteral("\r"));
+        return;
+    }
+#endif
+    if (CodeEdit *edit = focusedEdit()) {
+        if (!edit->browse() && !edit->isReadOnly())
+            edit->insertPlainText(QStringLiteral("\n"));
+        edit->setFocus();
+        return;
+    }
+    m_console->submitLine();
+}
+
+void MainWindow::routeEscape() {
+#ifdef Q_OS_ANDROID
+    if (m_gfx != nullptr && m_gfx->isOpen()) {
+        m_gfx->postKey(Qt::Key_Escape, QString());
+        return;
+    }
+#endif
+    m_console->insertInputText(QString(QChar(27)));
+}
+
+void MainWindow::routeTab() {
+    if (CodeEdit *edit = focusedEdit()) {
+        if (!edit->browse() && !edit->isReadOnly())
+            edit->insertPlainText(QStringLiteral("\t"));
+        edit->setFocus();
+        return;
+    }
+    m_console->insertInputText(QStringLiteral("  "));
+}
+
+void MainWindow::routeArrow(int key) {
+#ifdef Q_OS_ANDROID
+    if (m_gfx != nullptr && m_gfx->isOpen()) {
+        m_gfx->postKey(key, QString());
+        return;
+    }
+#endif
+    if (CodeEdit *edit = focusedEdit()) {
+        QKeyEvent event(QEvent::KeyPress, key, Qt::NoModifier);
+        QApplication::sendEvent(edit, &event);
+        edit->setFocus();
+        return;
+    }
+    m_console->moveEditCursor(key);
+    m_console->setFocus();
+}
+
+void MainWindow::routeCopy() {
+    if (CodeEdit *edit = focusedEdit()) {
+        edit->copy();
+        return;
+    }
+    m_console->copySelection();
+}
+
+void MainWindow::routePaste() {
+    if (CodeEdit *edit = focusedEdit()) {
+        if (!edit->browse() && !edit->isReadOnly())
+            edit->paste();
+        edit->setFocus();
+        return;
+    }
+    m_console->pasteClipboard();
+}
+
+void MainWindow::showHistoryMenu() {
+    QMenu menu(this);
+    const QStringList history = m_console->history();
+    if (history.isEmpty()) {
+        QAction *empty = menu.addAction(QStringLiteral("No commands yet"));
+        empty->setEnabled(false);
+    } else {
+        const int begin = qMax(0, history.size() - 20);
+        for (int i = history.size() - 1; i >= begin; --i) {
+            const QString line = history.at(i);
+            menu.addAction(line, this, [this, line] { m_console->fillInput(line); });
+        }
+    }
+    menu.exec(QCursor::pos());
+}
+
+void MainWindow::syncGraphicsInset() {
+#ifdef Q_OS_ANDROID
+    if (m_gfx == nullptr || m_inputBar == nullptr)
+        return;
+    const int height = qMax(m_inputBar->height(), m_inputBar->sizeHint().height());
+    m_gfx->setBottomInset(height);
+#else
+    return;
+#endif
+}
+
+void MainWindow::showFind(bool replace) {
+    bool consoleFocus = false;
+    for (QWidget *widget = QApplication::focusWidget(); widget != nullptr;
+         widget = widget->parentWidget()) {
+        if (widget == m_console)
+            consoleFocus = true;
+    }
+    auto show = [this, replace]() {
+        if (replace)
+            m_find->showReplace();
+        else
+            m_find->showFind();
+    };
+    if (!consoleFocus) {
+        CodeEdit *edit = focusedEdit();
+        if (edit == nullptr)
+            edit = currentEdit();
+        if (edit != nullptr) {
+            m_find->attach(edit);
+            m_find->setReplaceEnabled(!edit->browse() && !edit->isReadOnly());
+            show();
+            return;
+        }
+    }
+    if (m_console != nullptr) {
+        m_find->attach(m_console);
+        m_find->setReplaceEnabled(false);
+        show();
+        return;
+    }
+    statusBar()->showMessage(QStringLiteral("Find needs a source tab."));
 }
 
 void MainWindow::revealLine(const QString &path, int line, int column) {
@@ -1903,6 +2122,7 @@ void MainWindow::showEvent(QShowEvent *event) {
 void MainWindow::resizeEvent(QResizeEvent *event) {
     QMainWindow::resizeEvent(event);
 #ifdef Q_OS_ANDROID
+    syncGraphicsInset();
     if (m_gfx != nullptr)
         m_gfx->syncGeometry();
 #endif

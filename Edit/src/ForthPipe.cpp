@@ -222,6 +222,8 @@ ForthPipe::ForthPipe(QObject *parent) : QObject(parent) {}
 
 ForthPipe::~ForthPipe() { shutdown(); }
 
+bool ForthPipe::isBusy() const { return false; }
+
 QString ForthPipe::forthPath() const {
 #if defined(_M_X64)
     const QString forthName = QStringLiteral("forthx64.exe");
